@@ -29,7 +29,7 @@ The JSON model is versioned from its first release so those integrations do not 
 
 Analyzed repositories are untrusted input. Synopsis reads syntax and names but does not restore, compile,
 load, or execute them. C# uses Roslyn syntax trees without semantic compilation; JavaScript/TypeScript uses a
-balanced source scanner; Screenplay uses its indentation and keywords.
+balanced source scanner; Gherkin and Screenplay use small tolerant readers for their declarative syntax.
 
 This also makes the first result fast and useful when the target repository does not currently build.
 
@@ -44,7 +44,8 @@ same model when repository size makes it worthwhile.
 
 ## D-5 — Folder language is domain language
 
-Cratis specifications deliberately encode meaning in `for_`, `when_`, `and_`, and `given` folders and types.
-Synopsis treats that structure as information. It strips infrastructure segments such as `Source`, `Core`,
-`DotNET`, and spec-project names, then infers module, feature, and subject. Applications with another root can
-configure `skipSegments`; Screenplay declarations always win when present.
+Cratis specifications deliberately encode meaning in `for_`, `when_`, `and_`, and `given` folders, namespaces,
+and types. Synopsis treats that structure as information. Explicit suite, feature, and scenario prose wins;
+namespace and path conventions fill missing module, feature, subject, and context. Infrastructure segments
+such as `Source`, `Core`, `DotNET`, and spec-project names are stripped. Applications with another root can
+configure `skipSegments`; Screenplay and Gherkin declarations always win when present.

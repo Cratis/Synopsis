@@ -17,11 +17,11 @@ BDD specifications contain something unusually valuable: examples precise enough
 yet named so a person can understand the behavior. Then we hide them in test runners, flatten them into green
 dots, and make every new contributor rediscover the product by reading implementation code.
 
-**Synopsis puts the story back together.** Point it at a repository and it reads the C# backend specs,
-TypeScript frontend specs, and Screenplay specifications already there. It understands `for_`, `given`,
-`when_`, `and_`, `Establish`, `Because`, `should_`, `describe`, `beforeEach`, `it`, and
-`given / when / then`. The result is one polished, searchable HTML file organized by module and feature—not a
-test report, but living behavior documentation with every statement linked back to its evidence.
+**Synopsis puts the story back together.** Point it at a repository and it reads C# backend specs,
+JavaScript/TypeScript frontend specs, Gherkin features, and Screenplay specifications already there. It
+understands the different conventions runners use to express context, action, examples, and outcomes. The
+result is one polished, searchable HTML file organized by module and feature—not a test report, but living
+behavior documentation with every statement linked back to its evidence.
 
 ## Why “Synopsis”? 
 
@@ -118,13 +118,15 @@ Synopsis found 286 scenarios with 913 outcomes across 14 modules.
 
 | Input | Recognized shape | What becomes Given / When / Then |
 | --- | --- | --- |
-| **C#** | Cratis.Specifications, xUnit, NUnit | inherited contexts + `Establish` / `Because` / `[Fact]`, `[Theory]`, `[Test]` methods |
-| **TypeScript / React** | Vitest, Mocha-style BDD | `beforeEach` / `describe` / `it` or `test` |
+| **C#** | Cratis.Specifications, xUnit, NUnit/TUnit, MSTest, MSpec, LightBDD | inherited contexts; setup/act methods or attributes; test methods and `It` delegate fields |
+| **JavaScript / TypeScript** | Vitest, Jest, Mocha, Jasmine, Playwright, Cypress | nested `describe` / `context` / `suite`; hooks; `it` / `test` / `specify`; focused, skipped, todo, and data-driven variants |
+| **Gherkin** | Cucumber, SpecFlow, Reqnroll `.feature` files | `Background`, `Rule`, `Scenario`, scenario outlines and example rows, plus Given / When / Then chains |
 | **Screenplay** | `.play` specification blocks | `given` / `when` / `then`, including expected errors |
 
-For C#, Synopsis uses Roslyn syntax trees but deliberately performs no semantic compilation. TypeScript uses a
-balanced scanner that understands nested suites, strings, braces, and comments. A malformed source file adds a
-discovery note and does not hide useful behavior from the rest of the repository.
+For C#, Synopsis uses Roslyn syntax trees but deliberately performs no semantic compilation. JavaScript and
+TypeScript use a balanced scanner that understands nested suites, qualified Playwright calls, function and
+arrow callbacks, regular expressions, strings, braces, and comments. Gherkin scenario outlines become one
+readable scenario per example row. Malformed input does not hide useful behavior elsewhere in the repository.
 
 ## A product map, not a folder dump
 
@@ -140,8 +142,10 @@ Source/Core/
             and_it_is_tuned.ts      → scenario refinement
 ```
 
-Generic segments such as `Source`, `Core`, `DotNET`, and spec-project names disappear. Root folders become
-modules when there is no common feature root, matching the structure used by Ada and Cratis applications.
+Explicit BDD prose has priority. Synopsis then combines `for_`, `given`, `when_`, `and_`, and `should_` names
+with enclosing suites, type names, namespaces, and folders. Generic segments such as `Source`, `Core`,
+`DotNET`, and spec-project names disappear; suffixes such as `Tests` and `Specifications` do not leak into the
+story. Root folders become modules when there is no common feature root, matching Ada and Cratis applications.
 `--skip-segments` and [`synopsis.json`](Documentation/configuration.md) cover repository-specific layouts.
 
 ## Where it belongs
@@ -152,6 +156,7 @@ Synopsis is intentionally a **standalone tool and library first**:
 flowchart LR
     CS["C# specs"] --> Discover["Synopsis discovery"]
     TS["TypeScript specs"] --> Discover
+    Gherkin["Gherkin features"] --> Discover
     Play["Screenplay specs"] --> Discover
     Discover --> Model[["Versioned behavior model"]]
     Model --> HTML["Portable HTML"]

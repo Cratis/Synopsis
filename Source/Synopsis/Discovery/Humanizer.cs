@@ -17,14 +17,33 @@ internal static partial class Humanizer
             }
         }
 
-        value = value.Replace('_', ' ').Replace('-', ' ');
+        value = value.Replace('_', ' ').Replace('-', ' ').Replace('.', ' ');
         value = AcronymBoundary().Replace(value, "$1 $2");
         value = WordBoundary().Replace(value, "$1 $2");
         value = Whitespace().Replace(value, " ").Trim();
         return value.Length == 0 ? "System" : char.ToUpperInvariant(value[0]) + value[1..];
     }
 
-    public static string Outcome(string value) => Identifier(value, "should_", "it_");
+    public static string Scenario(string value) => Identifier(StripSemanticPrefix(value, "when"));
+
+    public static string Context(string value) => Identifier(StripSemanticPrefix(value, "given"));
+
+    public static string Subject(string value) => Identifier(StripSemanticPrefix(StripSemanticPrefix(value, "for"), "when"));
+
+    public static string Outcome(string value) => Identifier(StripSemanticPrefix(StripSemanticPrefix(value, "should"), "it"));
+
+    static string StripSemanticPrefix(string value, string prefix)
+    {
+        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || value.Length == prefix.Length)
+        {
+            return value;
+        }
+
+        var boundary = value[prefix.Length];
+        return boundary is '_' or '-' or ' ' || char.IsUpper(boundary)
+            ? value[(prefix.Length + (boundary is '_' or '-' or ' ' ? 1 : 0))..]
+            : value;
+    }
 
     [GeneratedRegex("([A-Z]+)([A-Z][a-z])")]
     private static partial Regex AcronymBoundary();

@@ -21,5 +21,6 @@ source linking needs help:
 | `skipSegments` | Folder names ignored when inferring modules and features. |
 | `exclude` | Additional directory names not traversed. |
 
-Command-line values override the file. Built-in exclusions cover `.git`, `bin`, `obj`, `node_modules`, build
-artifacts, and test results.
+Command-line values override the file. Built-in exclusions cover source-control and IDE metadata, package and
+compiler output, generated web bundles (`dist`, `out`, `wwwroot`, Storybook output), coverage, artifacts, and
+test results.

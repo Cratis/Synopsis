@@ -13,13 +13,15 @@ public class SpecificationDiscoverer
 {
     static readonly HashSet<string> DefaultExcluded = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".git", ".idea", ".vs", "bin", "obj", "node_modules", "Artifacts", "TestResults", "coverage"
+        ".git", ".idea", ".vs", ".next", "bin", "obj", "node_modules", "Artifacts", "TestResults", "coverage",
+        "dist", "out", "storybook-static", "wwwroot"
     };
 
     readonly IReadOnlyList<ISpecificationParser> _parsers =
     [
         new CSharpSpecificationParser(),
         new TypeScriptSpecificationParser(),
+        new GherkinSpecificationParser(),
         new ScreenplaySpecificationParser()
     ];
 

@@ -11,7 +11,17 @@ namespace Cratis.Synopsis.Parsing;
 
 internal class CSharpSpecificationParser : ISpecificationParser
 {
-    static readonly HashSet<string> TestAttributes = new(StringComparer.OrdinalIgnoreCase) { "Fact", "Theory", "Test", "TestCase" };
+    static readonly HashSet<string> TestAttributes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Fact", "Theory",                                      // xUnit
+        "Test", "TestCase", "TestCaseSource", "TestTemplate", // NUnit and TUnit
+        "TestMethod", "DataTestMethod",                         // MSTest
+        "RowTest", "Property", "Scenario"                       // MbUnit, property-based suites, and LightBDD
+    };
+    static readonly HashSet<string> GivenMethodNames = new(StringComparer.OrdinalIgnoreCase) { "Establish", "Given", "Arrange", "SetUp", "Setup", "TestInitialize", "BeforeEach" };
+    static readonly HashSet<string> GivenAttributes = new(StringComparer.OrdinalIgnoreCase) { "SetUp", "OneTimeSetUp", "TestInitialize", "ClassInitialize" };
+    static readonly HashSet<string> WhenMethodNames = new(StringComparer.OrdinalIgnoreCase) { "Because", "When", "Act" };
+    static readonly HashSet<string> IgnoredBaseTypes = new(StringComparer.OrdinalIgnoreCase) { "Specification", "IClassFixture", "ICollectionFixture", "IAsyncLifetime", "IDisposable", "IAsyncDisposable" };
 
     public IReadOnlySet<string> Extensions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs" };
 
@@ -31,26 +41,28 @@ internal class CSharpSpecificationParser : ISpecificationParser
                 diagnostics.Add(new(file.RelativePath, $"C# syntax: {diagnostic.GetMessage()}"));
             }
 
-            parsed.Add(new(file, tree, root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList()));
+            var types = root.DescendantNodes().OfType<TypeDeclarationSyntax>()
+                .Where(_ => _ is ClassDeclarationSyntax or RecordDeclarationSyntax)
+                .ToList();
+            parsed.Add(new(file, tree, types));
         }
 
         var classes = parsed.SelectMany(file => file.Classes.Select(type => new ClassInfo(file, type))).ToList();
         var scenarios = new List<BehaviorScenario>();
         foreach (var candidate in classes)
         {
-            var facts = candidate.Type.Members.OfType<MethodDeclarationSyntax>().Where(IsTest).ToList();
-            if (facts.Count == 0)
+            var outcomes = Outcomes(candidate.Type).ToList();
+            if (outcomes.Count == 0)
             {
                 continue;
             }
 
-            var classification = context.Classify(candidate.File.File.ClassificationPath);
+            var classification = context.Classify(candidate.File.File.ClassificationPath, namespaceName: candidate.Namespace);
             var given = BuildGiven(candidate, classes);
-            var because = candidate.Type.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(_ => _.Identifier.ValueText.Equals("Because", StringComparison.OrdinalIgnoreCase));
+            var because = FindLifecycle(candidate.Type, WhenMethodNames, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             var title = ScenarioTitle(candidate);
             var line = candidate.File.Tree.GetLineSpan(candidate.Type.Identifier.Span).StartLinePosition.Line + 1;
             var location = context.Locate(candidate.File.File.RelativePath, line);
-            var outcomes = facts.Select(method => new BehaviorStep(Humanizer.Outcome(method.Identifier.ValueText), Body(method))).ToList();
             scenarios.Add(new(
                 StableId(candidate.File.File.RelativePath, line),
                 classification.Module,
@@ -58,7 +70,7 @@ internal class CSharpSpecificationParser : ISpecificationParser
                 classification.Subject,
                 title,
                 given,
-                new(title, because is null ? null : Body(because)),
+                new(title, because?.Details),
                 outcomes,
                 "C#",
                 "Backend",
@@ -68,17 +80,47 @@ internal class CSharpSpecificationParser : ISpecificationParser
         return new(scenarios, diagnostics);
     }
 
-    static bool IsTest(MethodDeclarationSyntax method) => method.AttributeLists.SelectMany(_ => _.Attributes).Any(attribute =>
+    static IEnumerable<BehaviorStep> Outcomes(TypeDeclarationSyntax type)
     {
-        var name = attribute.Name.ToString().Split('.').Last();
-        name = name.EndsWith("Attribute", StringComparison.Ordinal) ? name[..^9] : name;
-        return TestAttributes.Contains(name);
-    });
+        foreach (var method in type.Members.OfType<MethodDeclarationSyntax>().Where(IsTest))
+        {
+            yield return new(DisplayName(method) ?? Humanizer.Outcome(method.Identifier.ValueText), Body(method));
+        }
+
+        // Machine.Specifications expresses assertions as delegate fields:
+        //     It should_save_the_order = () => ...;
+        foreach (var field in type.Members.OfType<FieldDeclarationSyntax>().Where(_ => TypeName(_.Declaration.Type).Equals("It", StringComparison.OrdinalIgnoreCase)))
+        {
+            foreach (var variable in field.Declaration.Variables)
+            {
+                yield return new(Humanizer.Outcome(variable.Identifier.ValueText), Body(variable.Initializer?.Value));
+            }
+        }
+    }
+
+    static bool IsTest(MethodDeclarationSyntax method) => method.AttributeLists.SelectMany(_ => _.Attributes).Any(attribute => TestAttributes.Contains(AttributeName(attribute)));
+
+    static string? DisplayName(MethodDeclarationSyntax method)
+    {
+        foreach (var argument in method.AttributeLists.SelectMany(_ => _.Attributes).SelectMany(_ => _.ArgumentList?.Arguments ?? []))
+        {
+            var name = argument.NameEquals?.Name.Identifier.ValueText ?? argument.NameColon?.Name.Identifier.ValueText;
+            if (name is not null &&
+                name is "DisplayName" or "TestName" or "Description" &&
+                argument.Expression is LiteralExpressionSyntax literal &&
+                literal.IsKind(SyntaxKind.StringLiteralExpression))
+            {
+                return literal.Token.ValueText;
+            }
+        }
+
+        return null;
+    }
 
     static IReadOnlyList<BehaviorStep> BuildGiven(ClassInfo candidate, IReadOnlyList<ClassInfo> allClasses)
     {
         var result = new List<BehaviorStep>();
-        var visited = new HashSet<ClassDeclarationSyntax>();
+        var visited = new HashSet<TypeDeclarationSyntax>();
 
         void AddContext(ClassInfo current, bool includeName)
         {
@@ -91,7 +133,7 @@ internal class CSharpSpecificationParser : ISpecificationParser
             {
                 var baseName = baseType.Type.ToString();
                 var shortName = baseName.Split('.').Last().Split('<').First();
-                if (shortName.Equals("Specification", StringComparison.OrdinalIgnoreCase))
+                if (IgnoredBaseTypes.Contains(shortName))
                 {
                     continue;
                 }
@@ -103,14 +145,14 @@ internal class CSharpSpecificationParser : ISpecificationParser
                 }
                 else
                 {
-                    result.Add(new(Humanizer.Identifier(shortName)));
+                    result.Add(new(Humanizer.Context(shortName)));
                 }
             }
 
-            var establish = current.Type.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(_ => _.Identifier.ValueText.Equals("Establish", StringComparison.OrdinalIgnoreCase));
+            var establish = FindLifecycle(current.Type, GivenMethodNames, GivenAttributes);
             if (includeName || establish is not null)
             {
-                result.Add(new(includeName ? Humanizer.Identifier(current.Type.Identifier.ValueText) : "The scenario context", establish is null ? null : Body(establish)));
+                result.Add(new(includeName ? Humanizer.Context(current.Type.Identifier.ValueText) : "The scenario context", establish?.Details));
             }
         }
 
@@ -146,16 +188,40 @@ internal class CSharpSpecificationParser : ISpecificationParser
     static string ScenarioTitle(ClassInfo candidate)
     {
         var name = candidate.Type.Identifier.ValueText;
-        if (!name.StartsWith("and_", StringComparison.OrdinalIgnoreCase))
+        if (!IsAnd(name))
         {
-            return Humanizer.Identifier(name, "when_");
+            return Humanizer.Scenario(WithoutTestSuffix(name));
         }
 
-        var folders = candidate.File.File.RelativePath.Replace('\\', '/').Split('/').SkipLast(1).ToList();
-        var parent = folders.LastOrDefault(_ => _.StartsWith("when_", StringComparison.OrdinalIgnoreCase));
+        var folders = candidate.File.File.RelativePath.Replace('\\', '/').Split('/').SkipLast(1);
+        var namespaceSegments = candidate.Namespace.Split('.');
+        var enclosingTypes = candidate.Type.Ancestors().OfType<TypeDeclarationSyntax>().Select(_ => _.Identifier.ValueText);
+        var parent = folders.Concat(namespaceSegments).Concat(enclosingTypes).LastOrDefault(IsWhen);
         return parent is null
-            ? Humanizer.Identifier(name, "and_")
-            : $"{Humanizer.Identifier(parent, "when_")} and {Humanizer.Identifier(name, "and_").ToLowerInvariant()}";
+            ? Humanizer.Identifier(StripAnd(name))
+            : $"{Humanizer.Scenario(parent)} and {Humanizer.Identifier(StripAnd(name)).ToLowerInvariant()}";
+    }
+
+    static bool IsWhen(string value) => value.StartsWith("when_", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("when ", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("When", StringComparison.Ordinal) && value.Length > 4 && char.IsUpper(value[4]);
+
+    static bool IsAnd(string value) => value.StartsWith("and_", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("and ", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("And", StringComparison.Ordinal) && value.Length > 3 && char.IsUpper(value[3]);
+
+    static string StripAnd(string value) => value[(value.StartsWith("and_", StringComparison.OrdinalIgnoreCase) || value.StartsWith("and ", StringComparison.OrdinalIgnoreCase) ? 4 : 3)..];
+
+    static string WithoutTestSuffix(string value)
+    {
+        foreach (var suffix in new[] { "Specifications", "Specification", "Specs", "Tests", "Test" })
+        {
+            if (value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && value.Length > suffix.Length)
+            {
+                return value[..^suffix.Length];
+            }
+        }
+        return value;
     }
 
     static string? Body(MethodDeclarationSyntax method)
@@ -173,11 +239,59 @@ internal class CSharpSpecificationParser : ISpecificationParser
         return method.Body.Statements.ToFullString().Trim();
     }
 
+    static Lifecycle? FindLifecycle(TypeDeclarationSyntax type, IReadOnlySet<string> names, IReadOnlySet<string> attributes)
+    {
+        var method = type.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(_ =>
+            names.Contains(_.Identifier.ValueText) ||
+            _.AttributeLists.SelectMany(list => list.Attributes).Any(attribute => attributes.Contains(AttributeName(attribute))));
+        if (method is not null)
+        {
+            return new(method.Identifier.ValueText, Body(method));
+        }
+
+        foreach (var field in type.Members.OfType<FieldDeclarationSyntax>().Where(_ => names.Contains(TypeName(_.Declaration.Type))))
+        {
+            var variable = field.Declaration.Variables.FirstOrDefault();
+            if (variable is not null)
+            {
+                return new(variable.Identifier.ValueText, Body(variable.Initializer?.Value));
+            }
+        }
+
+        return null;
+    }
+
+    static string TypeName(TypeSyntax type) => type.ToString().Split('.').Last().Split('<').First();
+
+    static string AttributeName(AttributeSyntax attribute)
+    {
+        var name = attribute.Name.ToString().Split('.').Last();
+        return name.EndsWith("Attribute", StringComparison.Ordinal) ? name[..^9] : name;
+    }
+
+    static string? Body(ExpressionSyntax? expression)
+    {
+        if (expression is null)
+        {
+            return null;
+        }
+
+        if (expression is ParenthesizedLambdaExpressionSyntax or SimpleLambdaExpressionSyntax)
+        {
+            var lambda = (LambdaExpressionSyntax)expression;
+            return lambda.Body is BlockSyntax block ? block.Statements.ToFullString().Trim() : lambda.Body.ToFullString().Trim();
+        }
+
+        return expression.ToFullString().Trim();
+    }
+
     static string StableId(string path, int line) => $"cs:{path}:{line}";
 
-    sealed record ParsedFile(SourceFile File, SyntaxTree Tree, IReadOnlyList<ClassDeclarationSyntax> Classes);
-    sealed record ClassInfo(ParsedFile File, ClassDeclarationSyntax Type)
+    sealed record ParsedFile(SourceFile File, SyntaxTree Tree, IReadOnlyList<TypeDeclarationSyntax> Classes);
+    sealed record ClassInfo(ParsedFile File, TypeDeclarationSyntax Type)
     {
+        public string Namespace => Type.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault()?.Name.ToString() ?? string.Empty;
+
         public string FullName
         {
             get
@@ -188,4 +302,5 @@ internal class CSharpSpecificationParser : ISpecificationParser
             }
         }
     }
+    sealed record Lifecycle(string Name, string? Details);
 }
