@@ -90,6 +90,18 @@ synopsis . --open
 That writes `synopsis.html`. No configuration, project restore, or test execution is required. Synopsis uses
 static syntax analysis and never loads or runs code from the repository it reads.
 
+Every release also carries the complete .NET tool package as a directly downloadable asset. This is useful
+for an air-gapped install or while a newly published version is still reaching NuGet.org:
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/Cratis/Synopsis/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
+mkdir -p .synopsis-packages
+curl -fsSL -o ".synopsis-packages/Cratis.Synopsis.Tool.${VERSION#v}.nupkg" \
+  "https://github.com/Cratis/Synopsis/releases/download/$VERSION/Cratis.Synopsis.Tool.${VERSION#v}.nupkg"
+dotnet tool install --global --add-source "$PWD/.synopsis-packages" \
+  --version "${VERSION#v}" Cratis.Synopsis.Tool
+```
+
 Generate the portable site and the integration model together:
 
 ```bash
