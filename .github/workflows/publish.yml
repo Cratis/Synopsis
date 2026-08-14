@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
       publish: ${{ steps.release.outputs.should-publish }}
       prerelease: ${{ steps.release.outputs.prerelease }}
     permissions:
@@ -52,7 +53,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - name: Checkout code
@@ -65,29 +66,14 @@ jobs:
         run: dotnet build Synopsis.slnx --configuration Release -p:Version=${{ needs.release.outputs.version }}
       - name: Create NuGet packages
         run: dotnet pack Synopsis.slnx --no-build --configuration Release --output ${{ env.NUGET_OUTPUT }} -p:PackageVersion=${{ needs.release.outputs.version }}
-      # A new repository cannot use OIDC until its NuGet trusted-publishing policy exists. The shared
-      # Cratis API key bootstraps the first package; OIDC takes over automatically once the policy is added.
-      - name: Select NuGet authentication
-        id: nuget-auth
+      - name: Attach packages to the GitHub release
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          if [ -n "$NUGET_API_KEY" ]; then
-            echo "mode=classic" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=oidc" >> "$GITHUB_OUTPUT"
-          fi
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload '${{ needs.release.outputs.tag }}' '${{ env.NUGET_OUTPUT }}'/*.nupkg '${{ env.NUGET_OUTPUT }}'/*.snupkg --clobber
       - name: NuGet login (OIDC → temporary API key)
-        if: steps.nuget-auth.outputs.mode == 'oidc'
         uses: NuGet/login@v1
         id: login
         with:
           user: ${{ secrets.NUGET_USER }}
-      - name: Push NuGet packages with OIDC
-        if: steps.nuget-auth.outputs.mode == 'oidc'
+      - name: Push NuGet packages
         run: dotnet nuget push --skip-duplicate '${{ env.NUGET_OUTPUT }}/*.nupkg' --timeout 900 --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
-      - name: Push NuGet packages with the bootstrap key
-        if: steps.nuget-auth.outputs.mode == 'classic'
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: dotnet nuget push --skip-duplicate '${{ env.NUGET_OUTPUT }}/*.nupkg' --timeout 900 --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
