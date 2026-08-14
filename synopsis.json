@@ -1,0 +1,7 @@
+{
+  "title": "Synopsis — how it behaves",
+  "description": "Executable examples, arranged as a readable account of the product's promises.",
+  "sourceUrl": "https://github.com/Cratis/Synopsis",
+  "skipSegments": ["Synopsis"],
+  "exclude": ["Snapshots"]
+}

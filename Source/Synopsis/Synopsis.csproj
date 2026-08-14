@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Cratis.Synopsis</AssemblyName>
+    <RootNamespace>Cratis.Synopsis</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Cratis.Synopsis</PackageId>
+    <Description>Discover BDD specifications and turn them into a language-neutral behavior model and a beautiful living document</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
+</Project>

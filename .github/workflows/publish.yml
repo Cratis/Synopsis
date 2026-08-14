@@ -1,0 +1,46 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release
+        required: true
+        default: 0.0.0
+      release-notes:
+        description: Release notes
+        required: true
+        default: No release notes
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      publish: ${{ steps.release.outputs.should-publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        uses: cratis/release-action@v1
+        with:
+          version: ${{ github.event.inputs.version }}
+          release-notes: ${{ github.event.inputs.release-notes }}
+  publish:
+    if: needs.release.outputs.publish == 'true'
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet pack Source/Tool --configuration Release --output Artifacts -p:PackageVersion=${{ needs.release.outputs.version }}
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - run: dotnet nuget push 'Artifacts/*.nupkg' --skip-duplicate --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

@@ -1,0 +1,21 @@
+module Lending
+  feature Returns
+    slice StateChange ReturnBook
+      specification ReturningABookOnTime
+        given BookBorrowed
+        when ReturnBook
+        then BookReturned
+
+      specification ReturningABookAfterItsDueDate
+        given BookBorrowed
+        given DueDatePassed
+        when ReturnBook
+        then BookReturned
+        then LateReturnRecorded
+
+  feature Reservations
+    slice StateChange ReserveBook
+      specification ReservingAnAvailableBook
+        given MemberRegistered
+        when ReserveBook
+        then error "An available book cannot be reserved"

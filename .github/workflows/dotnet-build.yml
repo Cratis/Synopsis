@@ -1,0 +1,36 @@
+name: .NET Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "10.0.x"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Test
+        run: dotnet test --configuration Debug
+      - name: Build Release
+        run: dotnet build --configuration Release
+      - name: Dogfood the repository
+        run: dotnet run --project Source/Tool -- . --output Artifacts/synopsis.html --format both
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synopsis
+          path: |
+            Artifacts/synopsis.html
+            Artifacts/synopsis.json

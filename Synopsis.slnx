@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Source/Synopsis/Synopsis.csproj" />
+  <Project Path="Source/Tool/Tool.csproj" />
+  <Project Path="Source/Specs/Specs.csproj" />
+</Solution>

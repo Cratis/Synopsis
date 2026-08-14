@@ -1,0 +1,31 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.cs]
+file_header_template = Copyright (c) Cratis. All rights reserved.\nLicensed under the MIT license. See LICENSE file in the project root for full license information.
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_using_directive_placement = outside_namespace:error
+csharp_style_var_elsewhere = true:error
+csharp_style_var_for_built_in_types = true:error
+csharp_style_var_when_type_is_apparent = true:error
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_require_accessibility_modifiers = never:error
+dotnet_sort_system_directives_first = true:error
+dotnet_diagnostic.CS1591.severity = none
+
+[{**/Specs/**/*.cs,**/for_*/*.cs,**/when_*/*.cs,**/given/*.cs}]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.IDE1006.severity = none
+dotnet_diagnostic.IDE0051.severity = none
+dotnet_diagnostic.CS8618.severity = none

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Cratis.Synopsis.Tool</AssemblyName>
+    <RootNamespace>Cratis.Synopsis.Tool</RootNamespace>
+    <PackageId>Cratis.Synopsis.Tool</PackageId>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>synopsis</ToolCommandName>
+    <Description>Turn C#, TypeScript, and Screenplay BDD specifications into a beautiful living behavior document</Description>
+    <PackageTags>bdd;specifications;documentation;living-documentation;cratis</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Synopsis/Synopsis.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
