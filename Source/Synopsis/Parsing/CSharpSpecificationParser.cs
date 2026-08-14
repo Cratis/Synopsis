@@ -41,7 +41,7 @@ internal class CSharpSpecificationParser : ISpecificationParser
                 continue;
             }
 
-            var classification = context.Classify(candidate.File.File.RelativePath);
+            var classification = context.Classify(candidate.File.File.ClassificationPath);
             var given = BuildGiven(candidate, classes);
             var because = candidate.Type.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(_ => _.Identifier.ValueText.Equals("Because", StringComparison.OrdinalIgnoreCase));
             var title = ScenarioTitle(candidate);

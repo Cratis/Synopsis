@@ -69,7 +69,7 @@ internal class ScreenplaySpecificationParser : ISpecificationParser
                         }
                     }
 
-                    var classification = context.Classify(file.RelativePath, module, feature);
+                    var classification = context.Classify(file.ClassificationPath, module, feature);
                     var line = index + 1;
                     scenarios.Add(new(
                         $"play:{file.RelativePath}:{line}",

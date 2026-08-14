@@ -1,5 +1,9 @@
 name: Publish
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,10 +11,18 @@ on:
         description: Version to release
         required: true
         default: 0.0.0
+        type: string
       release-notes:
         description: Release notes
         required: true
         default: No release notes
+        type: string
+  push:
+    branches: [main]
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  NUGET_OUTPUT: ./Artifacts/NuGet
 
 permissions:
   contents: write
@@ -22,9 +34,15 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       publish: ${{ steps.release.outputs.should-publish }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    permissions:
+      contents: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
-      - id: release
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Release
+        id: release
         uses: cratis/release-action@v1
         with:
           version: ${{ github.event.inputs.version }}
@@ -33,14 +51,24 @@ jobs:
     if: needs.release.outputs.publish == 'true'
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
-      - run: dotnet pack Source/Tool --configuration Release --output Artifacts -p:PackageVersion=${{ needs.release.outputs.version }}
-      - uses: NuGet/login@v1
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Build
+        run: dotnet build Synopsis.slnx --configuration Release -p:Version=${{ needs.release.outputs.version }}
+      - name: Create NuGet packages
+        run: dotnet pack Synopsis.slnx --no-build --configuration Release --output ${{ env.NUGET_OUTPUT }} -p:PackageVersion=${{ needs.release.outputs.version }}
+      - name: NuGet login (OIDC → temporary API key)
+        uses: NuGet/login@v1
         id: login
         with:
           user: ${{ secrets.NUGET_USER }}
-      - run: dotnet nuget push 'Artifacts/*.nupkg' --skip-duplicate --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+      - name: Push NuGet packages
+        run: dotnet nuget push --skip-duplicate '${{ env.NUGET_OUTPUT }}/*.nupkg' --timeout 900 --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

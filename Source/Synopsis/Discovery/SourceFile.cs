@@ -3,4 +3,4 @@
 
 namespace Cratis.Synopsis.Discovery;
 
-internal record SourceFile(string AbsolutePath, string RelativePath, string Content);
+internal record SourceFile(string AbsolutePath, string RelativePath, string ClassificationPath, string Content);

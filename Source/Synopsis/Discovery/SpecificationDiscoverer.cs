@@ -44,7 +44,11 @@ public class SpecificationDiscoverer
             .Where(path => supported.Contains(Path.GetExtension(path)))
             .Where(path => !Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(excluded.Contains))
             .OrderBy(path => path, StringComparer.Ordinal)
-            .Select(path => new SourceFile(path, Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText(path)))
+            .Select(path => new SourceFile(
+                path,
+                Path.GetRelativePath(root, path).Replace('\\', '/'),
+                Path.GetRelativePath(input, path).Replace('\\', '/'),
+                File.ReadAllText(path)))
             .ToList();
 
         var results = _parsers.Select(parser => parser.Parse(files.Where(file => parser.Extensions.Contains(Path.GetExtension(file.RelativePath))).ToList(), context)).ToList();

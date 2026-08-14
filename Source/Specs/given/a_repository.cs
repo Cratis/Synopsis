@@ -20,9 +20,9 @@ public class a_repository : Specification
         File.WriteAllText(path, content);
     }
 
-    protected void Discover() => _result = new SpecificationDiscoverer().Discover(new()
+    protected void Discover(string relativeInput = "") => _result = new SpecificationDiscoverer().Discover(new()
     {
-        Input = _root,
+        Input = Path.Combine(_root, relativeInput),
         Title = "Example"
     });
 

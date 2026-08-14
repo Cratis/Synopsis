@@ -29,7 +29,7 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
                     continue;
                 }
 
-                var classification = context.Classify(file.RelativePath);
+                var classification = context.Classify(file.ClassificationPath);
                 var line = LineAt(file.Content, describe.Start);
                 var beforeEach = BeforeEach().Match(file.Content, describe.Start, describe.End - describe.Start);
                 var given = beforeEach.Success
