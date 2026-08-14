@@ -189,7 +189,7 @@ Pin Synopsis in a local tool manifest, run it after the test gate, and upload th
   run: dotnet test --configuration Release
 - name: Tell the system's story
   run: dotnet tool run synopsis . --format both --output Artifacts/synopsis.html --fail-on-empty
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v7
   with:
     name: system-synopsis
     path: Artifacts/synopsis.*

@@ -9,7 +9,7 @@ HTML for people and JSON for tools:
 - run: dotnet test --configuration Release
 - run: dotnet tool restore
 - run: dotnet tool run synopsis . --format both --output Artifacts/synopsis.html --fail-on-empty
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v7
   with:
     name: system-synopsis
     path: Artifacts/synopsis.*
