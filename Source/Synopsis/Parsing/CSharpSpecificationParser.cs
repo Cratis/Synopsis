@@ -21,7 +21,10 @@ internal class CSharpSpecificationParser : ISpecificationParser
         var parsed = new List<ParsedFile>();
         foreach (var file in files)
         {
-            var tree = CSharpSyntaxTree.ParseText(file.Content, path: file.RelativePath);
+            // Cratis applications intentionally compile their colocated specifications only in Debug builds.
+            // Synopsis reads the behavioral source, not the shipping compilation, so those regions must be active.
+            var parseOptions = CSharpParseOptions.Default.WithPreprocessorSymbols("DEBUG");
+            var tree = CSharpSyntaxTree.ParseText(file.Content, parseOptions, file.RelativePath);
             var root = tree.GetRoot();
             foreach (var diagnostic in tree.GetDiagnostics().Where(_ => _.Severity == DiagnosticSeverity.Error).Take(3))
             {

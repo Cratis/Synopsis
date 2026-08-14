@@ -12,6 +12,7 @@ public class when_discovering_a_csharp_specification : given.a_repository
     void Because()
     {
         Write("Source/Orders/Checkout/for_cart/when_checking_out.cs", """
+            #if DEBUG
             class when_checking_out : given.a_cart_with_an_item
             {
                 Receipt _receipt;
@@ -25,6 +26,7 @@ public class when_discovering_a_csharp_specification : given.a_repository
             {
                 void Establish() => cart.Add(anItem);
             }
+            #endif
             """);
         Discover();
         _scenario = _result.Scenarios.Single();
