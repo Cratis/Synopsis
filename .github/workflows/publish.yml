@@ -35,6 +35,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
@@ -57,6 +58,7 @@ jobs:
     if: needs.release.outputs.publish == 'true'
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -98,6 +100,7 @@ jobs:
     # and failing on those would make this job noise that everyone learns to ignore.
     if: always() && needs.release.result == 'success' && contains(fromJSON('["no-label", "error"]'), needs.release.outputs.reason)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: [release]
 
     steps:
