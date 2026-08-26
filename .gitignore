@@ -16,3 +16,6 @@ synopsis/
 synopsis.html
 **/synopsis.json
 !/synopsis.json
+
+# Local AI work artifacts (plans, handovers, session notes) — never tracked
+.ai-work/
