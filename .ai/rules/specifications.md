@@ -1,3 +1,7 @@
+---
+applyTo: '**/*'
+---
+
 # Specification conventions
 
 Specs communicate behavior to both the runner and Synopsis. Use a `for_<subject>` folder, a `when_<action>`

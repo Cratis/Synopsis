@@ -1,3 +1,7 @@
+---
+applyTo: '**/*'
+---
+
 # Git and pull request conventions
 
 Use imperative commit subjects that explain one coherent change. Do not include generated reports, build

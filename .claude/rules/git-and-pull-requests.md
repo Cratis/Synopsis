@@ -1,0 +1,1 @@
+../../.ai/rules/git-and-pull-requests.md

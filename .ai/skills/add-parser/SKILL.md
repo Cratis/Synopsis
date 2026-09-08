@@ -1,3 +1,8 @@
+---
+name: add-parser
+description: 'Add or extend a specification parser while preserving shared scenario semantics and source locations.'
+---
+
 # Add or extend a specification parser
 
 1. Add a failing Cratis-style specification using the smallest representative source.
