@@ -251,7 +251,7 @@ dotnet run --project Source/Tool -- Samples/Bookshop --output Samples/Bookshop/s
 
 The repository follows the same Cratis metadata conventions as Screenplay and Stage: shared package versions,
 strict Release builds, Source Link, MIT license, PR/issue templates, build and publish workflows, EditorConfig,
-and a canonical `.ai/` assistant corpus with adapters for Codex, Claude, and Copilot.
+and the Cratis AI contract (`.cratis/PROJECT.md` + `.cratis/ai.json` with the `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` bootstraps).
 
 ## The Cratis ecosystem
 
