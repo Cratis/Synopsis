@@ -9,5 +9,5 @@ them as living documentation.
 
 Read every concern below before working in this repository. Together they are the project-owned instructions and override conflicting shared guidance.
 
-- [Repository rules](project/repository-rules.md)
-- [AI-assisted development](project/ai-assisted-development.md)
+- [Repository rules](.cratis/ai/rules/project/repository-rules.md)
+- [AI-assisted development](.cratis/ai/rules/project/ai-assisted-development.md)
