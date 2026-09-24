@@ -43,6 +43,7 @@ jobs:
       prerelease: ${{ steps.release.outputs.prerelease }}
       reason: ${{ steps.release.outputs.reason }}
     permissions:
+      issues: write
       contents: write
       id-token: write
     steps:
