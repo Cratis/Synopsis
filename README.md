@@ -2,6 +2,9 @@
 
 <img src="assets/synopsis.svg" alt="Synopsis — behavior, beautifully told" width="720">
 
+Cratis Synopsis is a documentation tool for developers that turns executable specifications into searchable
+HTML behavior documentation.
+
 **Turns the executable examples scattered through a repository into the clearest account of what the system actually promises.**
 
 [![Build](https://github.com/Cratis/Synopsis/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/Cratis/Synopsis/actions/workflows/dotnet-build.yml)
@@ -292,6 +295,6 @@ Everything Cratis publishes today is MIT licensed and free to use. Join the comm
 
 *The source proves it. Synopsis makes it readable.*
 
-*Part of the [Cratis](https://cratis.io) platform · Licensed under the [MIT license](LICENSE)*
+*Part of the [Cratis](https://www.cratis.io) platform · Licensed under the [MIT license](LICENSE)*
 
 </div>
