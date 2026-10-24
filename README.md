@@ -245,11 +245,12 @@ types so new parsers and new hosts can meet at a durable boundary.
 ## Build and contribute
 
 ```bash
-dotnet test
+dotnet build --configuration Debug
+dotnet run --project Source/Specs/Specs.csproj --configuration Debug --no-build
 dotnet build --configuration Release
 
-# Dogfood the sample and open Samples/Bookshop/synopsis.html
-dotnet run --project Source/Tool -- Samples/Bookshop --output Samples/Bookshop/synopsis.html
+# Dogfood the sample and open .ai-work/specs5/sample-synopsis.html
+dotnet run --project Source/Tool -- Samples/Bookshop --output .ai-work/specs5/sample-synopsis.html
 ```
 
 The repository follows the same Cratis metadata conventions as Screenplay and Stage: shared package versions,

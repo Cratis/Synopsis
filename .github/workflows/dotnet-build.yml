@@ -18,18 +18,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Test
-        run: dotnet test --configuration Debug
+      - name: Build Debug
+        run: dotnet build --configuration Debug
+      - name: Run specifications
+        run: dotnet run --project Source/Specs/Specs.csproj --configuration Debug --no-build
       - name: Build Release
         run: dotnet build --configuration Release
       - name: Dogfood the repository
         run: dotnet run --project Source/Tool -- . --output Artifacts/synopsis.html --format both
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           retention-days: 3
           name: synopsis
