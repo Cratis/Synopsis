@@ -250,7 +250,7 @@ dotnet run --project Source/Specs/Specs.csproj --configuration Debug --no-build
 dotnet build --configuration Release
 
 # Dogfood the sample and open .ai-work/specs5/sample-synopsis.html
-dotnet run --project Source/Tool --framework net11.0 -- Samples/Bookshop --output .ai-work/specs5/sample-synopsis.html
+dotnet run --project Source/Tool -- Samples/Bookshop --output .ai-work/specs5/sample-synopsis.html
 ```
 
 The repository follows the same Cratis metadata conventions as Screenplay and Stage: shared package versions,
