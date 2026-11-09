@@ -14,7 +14,7 @@ dotnet format Synopsis.slnx --verify-no-changes
 dotnet build Synopsis.slnx --configuration Debug
 dotnet run --project Source/Specs/Specs.csproj --configuration Debug --no-build
 dotnet build Synopsis.slnx --configuration Release
-dotnet run --project Source/Tool -- Samples/Bookshop --output .ai-work/specs5/sample-synopsis.html --format both
+dotnet run --project Source/Tool --framework net11.0 -- Samples/Bookshop --output .ai-work/specs5/sample-synopsis.html --format both
 ```
 
 Use the pull request template for release notes. By contributing, you agree that your changes are licensed
