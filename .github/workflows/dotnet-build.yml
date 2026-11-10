@@ -28,7 +28,6 @@ jobs:
           dotnet-version: |
             ${{ env.DOTNET10_VERSION }}
             ${{ env.DOTNET11_VERSION }}
-          dotnet-quality: preview
       - name: Build Debug
         run: dotnet build --configuration Debug -p:SpecificationsTestFrameworks='"net10.0;net11.0"'
       - name: Run specifications
