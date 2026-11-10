@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Executables and tools run on the latest .NET only; the library keeps net10.0;net11.0. -->
+    <TargetFrameworks>net11.0</TargetFrameworks>
     <AssemblyName>Cratis.Synopsis.Tool</AssemblyName>
     <RootNamespace>Cratis.Synopsis.Tool</RootNamespace>
     <PackageId>Cratis.Synopsis.Tool</PackageId>

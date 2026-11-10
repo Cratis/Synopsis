@@ -25,7 +25,8 @@ on:
     branches: [main]
 
 env:
-  DOTNET_VERSION: "10.0.x"
+  DOTNET10_VERSION: "10.0.x"
+  DOTNET11_VERSION: "11.0.x"
   NUGET_OUTPUT: ./Artifacts/NuGet
 
 permissions:
@@ -69,7 +70,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-version: |
+            ${{ env.DOTNET10_VERSION }}
+            ${{ env.DOTNET11_VERSION }}
       - name: Build
         run: dotnet build Synopsis.slnx --configuration Release -p:Version=${{ needs.release.outputs.version }}
       - name: Create NuGet packages
