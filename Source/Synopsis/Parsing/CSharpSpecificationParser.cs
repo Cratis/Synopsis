@@ -29,56 +29,56 @@ internal class CSharpSpecificationParser : ISpecificationParser
     public ParseResult Parse(IReadOnlyList<SourceFile> files, DiscoveryContext context)
     {
         var diagnostics = new List<DiscoveryDiagnostic>();
-        var parsed = new List<ParsedFile>();
-        foreach (var file in files)
-        {
-            // Cratis applications intentionally compile their colocated specifications only in Debug builds.
-            // Synopsis reads the behavioral source, not the shipping compilation, so those regions must be active.
-            var parseOptions = CSharpParseOptions.Default.WithPreprocessorSymbols("DEBUG");
-            var tree = CSharpSyntaxTree.ParseText(file.Content, parseOptions, file.RelativePath);
-            var root = tree.GetRoot();
-            foreach (var diagnostic in tree.GetDiagnostics().Where(_ => _.Severity == DiagnosticSeverity.Error).Take(3))
-            {
-                diagnostics.Add(new(file.RelativePath, $"C# syntax: {diagnostic.GetMessage()}"));
-            }
-
-            var types = root.DescendantNodes().OfType<TypeDeclarationSyntax>()
-                .Where(_ => _ is ClassDeclarationSyntax or RecordDeclarationSyntax)
-                .ToList();
-            parsed.Add(new(file, tree, types));
-        }
-
+        var parsed = files.Select(file => ParseFile(file, diagnostics)).ToList();
         var classes = parsed.SelectMany(file => file.Classes.Select(type => new ClassInfo(file, type))).ToList();
-        var scenarios = new List<BehaviorScenario>();
-        foreach (var candidate in classes)
-        {
-            var outcomes = Outcomes(candidate.Type).ToList();
-            if (outcomes.Count == 0)
-            {
-                continue;
-            }
+        var scenarios = classes
+            .Select(candidate => BuildScenario(candidate, classes, context))
+            .OfType<BehaviorScenario>()
+            .ToList();
+        return new(scenarios, diagnostics);
+    }
 
-            var classification = context.Classify(candidate.File.File.ClassificationPath, namespaceName: candidate.Namespace);
-            var given = BuildGiven(candidate, classes);
-            var because = FindLifecycle(candidate.Type, WhenMethodNames, NoAttributes);
-            var title = ScenarioTitle(candidate);
-            var line = candidate.File.Tree.GetLineSpan(candidate.Type.Identifier.Span).StartLinePosition.Line + 1;
-            var location = context.Locate(candidate.File.File.RelativePath, line);
-            scenarios.Add(new(
-                StableId(candidate.File.File.RelativePath, line),
-                classification.Module,
-                classification.Feature,
-                classification.Subject,
-                title,
-                given,
-                new(title, because?.Details),
-                outcomes,
-                "C#",
-                "Backend",
-                location));
+    static ParsedFile ParseFile(SourceFile file, List<DiscoveryDiagnostic> diagnostics)
+    {
+        // Cratis applications intentionally compile their colocated specifications only in Debug builds.
+        // Synopsis reads the behavioral source, not the shipping compilation, so those regions must be active.
+        var parseOptions = CSharpParseOptions.Default.WithPreprocessorSymbols("DEBUG");
+        var tree = CSharpSyntaxTree.ParseText(file.Content, parseOptions, file.RelativePath);
+        foreach (var diagnostic in tree.GetDiagnostics().Where(_ => _.Severity == DiagnosticSeverity.Error).Take(3))
+        {
+            diagnostics.Add(new(file.RelativePath, $"C# syntax: {diagnostic.GetMessage()}"));
         }
 
-        return new(scenarios, diagnostics);
+        var types = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>()
+            .Where(_ => _ is ClassDeclarationSyntax or RecordDeclarationSyntax)
+            .ToList();
+        return new(file, tree, types);
+    }
+
+    static BehaviorScenario? BuildScenario(ClassInfo candidate, IReadOnlyList<ClassInfo> classes, DiscoveryContext context)
+    {
+        var outcomes = Outcomes(candidate.Type).ToList();
+        if (outcomes.Count == 0)
+        {
+            return null;
+        }
+
+        var classification = context.Classify(candidate.File.File.ClassificationPath, namespaceName: candidate.Namespace);
+        var because = FindLifecycle(candidate.Type, WhenMethodNames, NoAttributes);
+        var title = ScenarioTitle(candidate);
+        var line = candidate.File.Tree.GetLineSpan(candidate.Type.Identifier.Span).StartLinePosition.Line + 1;
+        return new(
+            StableId(candidate.File.File.RelativePath, line),
+            classification.Module,
+            classification.Feature,
+            classification.Subject,
+            title,
+            BuildGiven(candidate, classes),
+            new(title, because?.Details),
+            outcomes,
+            "C#",
+            "Backend",
+            context.Locate(candidate.File.File.RelativePath, line));
     }
 
     static IEnumerable<BehaviorStep> Outcomes(TypeDeclarationSyntax type)
@@ -101,64 +101,64 @@ internal class CSharpSpecificationParser : ISpecificationParser
 
     static bool IsTest(MethodDeclarationSyntax method) => method.AttributeLists.SelectMany(_ => _.Attributes).Any(attribute => TestAttributes.Contains(AttributeName(attribute)));
 
-    static string? DisplayName(MethodDeclarationSyntax method)
-    {
-        foreach (var argument in method.AttributeLists.SelectMany(_ => _.Attributes).SelectMany(_ => _.ArgumentList?.Arguments ?? []))
-        {
-            var name = argument.NameEquals?.Name.Identifier.ValueText ?? argument.NameColon?.Name.Identifier.ValueText;
-            if (name is not null &&
-                name is "DisplayName" or "TestName" or "Description" &&
-                argument.Expression is LiteralExpressionSyntax literal &&
-                literal.IsKind(SyntaxKind.StringLiteralExpression))
-            {
-                return literal.Token.ValueText;
-            }
-        }
+    static string? DisplayName(MethodDeclarationSyntax method) => method.AttributeLists
+        .SelectMany(_ => _.Attributes)
+        .SelectMany(_ => _.ArgumentList?.Arguments ?? [])
+        .Select(DisplayNameOf)
+        .FirstOrDefault(_ => _ is not null);
 
-        return null;
+    static string? DisplayNameOf(AttributeArgumentSyntax argument)
+    {
+        var name = argument.NameEquals?.Name.Identifier.ValueText ?? argument.NameColon?.Name.Identifier.ValueText;
+        return name is "DisplayName" or "TestName" or "Description" &&
+            argument.Expression is LiteralExpressionSyntax literal &&
+            literal.IsKind(SyntaxKind.StringLiteralExpression)
+            ? literal.Token.ValueText
+            : null;
     }
 
     static IReadOnlyList<BehaviorStep> BuildGiven(ClassInfo candidate, IReadOnlyList<ClassInfo> allClasses)
     {
-        var result = new List<BehaviorStep>();
-        var visited = new HashSet<TypeDeclarationSyntax>();
+        var state = new GivenState(allClasses);
+        AddContext(state, candidate, false);
+        return state.Result;
+    }
 
-        void AddContext(ClassInfo current, bool includeName)
+    static void AddContext(GivenState state, ClassInfo current, bool includeName)
+    {
+        if (!state.Visited.Add(current.Type))
         {
-            if (!visited.Add(current.Type))
-            {
-                return;
-            }
-
-            foreach (var baseType in current.Type.BaseList?.Types ?? [])
-            {
-                var baseName = baseType.Type.ToString();
-                var shortName = baseName.Split('.').Last().Split('<').First();
-                if (IgnoredBaseTypes.Contains(shortName))
-                {
-                    continue;
-                }
-
-                var inherited = ResolveBase(current, baseName, shortName, allClasses);
-                if (inherited is not null)
-                {
-                    AddContext(inherited, true);
-                }
-                else
-                {
-                    result.Add(new(Humanizer.Context(shortName)));
-                }
-            }
-
-            var establish = FindLifecycle(current.Type, GivenMethodNames, GivenAttributes);
-            if (includeName || establish is not null)
-            {
-                result.Add(new(includeName ? Humanizer.Context(current.Type.Identifier.ValueText) : "The scenario context", establish?.Details));
-            }
+            return;
         }
 
-        AddContext(candidate, false);
-        return result;
+        foreach (var baseType in current.Type.BaseList?.Types ?? [])
+        {
+            AddBase(state, current, baseType.Type.ToString());
+        }
+
+        var establish = FindLifecycle(current.Type, GivenMethodNames, GivenAttributes);
+        if (includeName || establish is not null)
+        {
+            state.Result.Add(new(includeName ? Humanizer.Context(current.Type.Identifier.ValueText) : "The scenario context", establish?.Details));
+        }
+    }
+
+    static void AddBase(GivenState state, ClassInfo current, string baseName)
+    {
+        var shortName = baseName.Split('.').Last().Split('<').First();
+        if (IgnoredBaseTypes.Contains(shortName))
+        {
+            return;
+        }
+
+        if (ResolveBase(current, baseName, shortName, state.AllClasses) is { } inherited)
+        {
+            AddContext(state, inherited, true);
+        }
+        else
+        {
+            state.Result.Add(new(Humanizer.Context(shortName)));
+        }
     }
 
     static ClassInfo? ResolveBase(ClassInfo current, string baseName, string shortName, IReadOnlyList<ClassInfo> allClasses)
@@ -176,15 +176,8 @@ internal class CSharpSpecificationParser : ISpecificationParser
         return candidates.OrderByDescending(candidate => SharedPrefix(currentParts, candidate.File.File.RelativePath.Split('/'))).FirstOrDefault();
     }
 
-    static int SharedPrefix(IReadOnlyList<string> first, IReadOnlyList<string> second)
-    {
-        var count = 0;
-        while (count < first.Count && count < second.Count && first[count].Equals(second[count], StringComparison.Ordinal))
-        {
-            count++;
-        }
-        return count;
-    }
+    static int SharedPrefix(IReadOnlyList<string> first, IReadOnlyList<string> second) =>
+        first.Zip(second).TakeWhile(pair => pair.First.Equals(pair.Second, StringComparison.Ordinal)).Count();
 
     static string ScenarioTitle(ClassInfo candidate)
     {
@@ -304,4 +297,13 @@ internal class CSharpSpecificationParser : ISpecificationParser
         }
     }
     sealed record Lifecycle(string Name, string? Details);
+
+    sealed class GivenState(IReadOnlyList<ClassInfo> allClasses)
+    {
+        public IReadOnlyList<ClassInfo> AllClasses { get; } = allClasses;
+
+        public List<BehaviorStep> Result { get; } = [];
+
+        public HashSet<TypeDeclarationSyntax> Visited { get; } = [];
+    }
 }
