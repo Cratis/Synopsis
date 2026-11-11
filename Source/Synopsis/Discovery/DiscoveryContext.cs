@@ -18,7 +18,7 @@ internal class DiscoveryContext
     public DiscoveryOptions Options { get; }
 
     public PathClassification Classify(string relativePath, string? explicitModule = null, string? explicitFeature = null, string? namespaceName = null) =>
-        PathClassifier.Classify(relativePath, Options.SkipSegments, explicitModule, explicitFeature, namespaceName, new DirectoryInfo(Root).Name);
+        PathClassifier.Classify(new(relativePath, Options.SkipSegments, explicitModule, explicitFeature, namespaceName, new DirectoryInfo(Root).Name));
 
     public SourceLocation Locate(string path, int line)
     {
