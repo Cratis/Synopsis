@@ -18,9 +18,10 @@ internal class CSharpSpecificationParser : ISpecificationParser
         "TestMethod", "DataTestMethod",                         // MSTest
         "RowTest", "Property", "Scenario"                       // MbUnit, property-based suites, and LightBDD
     };
-    static readonly HashSet<string> GivenMethodNames = new(StringComparer.OrdinalIgnoreCase) { "Establish", "Given", "Arrange", "SetUp", "Setup", "TestInitialize", "BeforeEach" };
-    static readonly HashSet<string> GivenAttributes = new(StringComparer.OrdinalIgnoreCase) { "SetUp", "OneTimeSetUp", "TestInitialize", "ClassInitialize" };
-    static readonly HashSet<string> WhenMethodNames = new(StringComparer.OrdinalIgnoreCase) { "Because", "When", "Act" };
+    static readonly HashSet<string> GivenMethodNames = [with(StringComparer.OrdinalIgnoreCase), "Establish", "Given", "Arrange", "SetUp", "Setup", "TestInitialize", "BeforeEach"];
+    static readonly HashSet<string> GivenAttributes = [with(StringComparer.OrdinalIgnoreCase), "SetUp", "OneTimeSetUp", "TestInitialize", "ClassInitialize"];
+    static readonly HashSet<string> WhenMethodNames = [with(StringComparer.OrdinalIgnoreCase), "Because", "When", "Act"];
+    static readonly HashSet<string> NoAttributes = [with(StringComparer.OrdinalIgnoreCase)];
     static readonly HashSet<string> IgnoredBaseTypes = new(StringComparer.OrdinalIgnoreCase) { "Specification", "IClassFixture", "ICollectionFixture", "IAsyncLifetime", "IDisposable", "IAsyncDisposable" };
 
     public IReadOnlySet<string> Extensions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs" };
@@ -59,7 +60,7 @@ internal class CSharpSpecificationParser : ISpecificationParser
 
             var classification = context.Classify(candidate.File.File.ClassificationPath, namespaceName: candidate.Namespace);
             var given = BuildGiven(candidate, classes);
-            var because = FindLifecycle(candidate.Type, WhenMethodNames, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            var because = FindLifecycle(candidate.Type, WhenMethodNames, NoAttributes);
             var title = ScenarioTitle(candidate);
             var line = candidate.File.Tree.GetLineSpan(candidate.Type.Identifier.Span).StartLinePosition.Line + 1;
             var location = context.Locate(candidate.File.File.RelativePath, line);
