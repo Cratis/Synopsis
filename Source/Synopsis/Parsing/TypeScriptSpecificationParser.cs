@@ -4,7 +4,6 @@
 using System.Text.RegularExpressions;
 using Cratis.Synopsis.Discovery;
 using Cratis.Synopsis.Model;
-using static Cratis.Synopsis.Parsing.TypeScriptScanner;
 
 namespace Cratis.Synopsis.Parsing;
 
@@ -95,7 +94,7 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
 
     static IEnumerable<Call> Calls(SourceFile file, List<DiscoveryDiagnostic> diagnostics)
     {
-        var code = CodePositions(file.Content);
+        var code = new TypeScriptCursor(file.Content).CodePositions();
         foreach (Match candidate in Candidate().Matches(file.Content))
         {
             if (!IsCallCandidate(file.Content, code, candidate))
@@ -113,8 +112,9 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
 
     static bool IsCallCandidate(string source, bool[] code, Match candidate)
     {
-        var qualified = PreviousNonWhitespaceOnLine(source, candidate.Index) == '.';
-        return code[candidate.Index] && (!qualified || IsBddQualifier(QualifierBefore(source, candidate.Index)));
+        var cursor = new TypeScriptCursor(source, candidate.Index);
+        var qualified = cursor.PreviousNonWhitespaceOnLine() == '.';
+        return code[candidate.Index] && (!qualified || IsBddQualifier(cursor.QualifierBefore()));
     }
 
     static CallKind KindOf(string name) => SuiteNames.Contains(name) ? CallKind.Suite : TestNames.Contains(name) ? CallKind.Test : CallKind.Hook;
@@ -125,7 +125,7 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
         {
             return call;
         }
-        if (site.Kind != CallKind.Suite || !LooksLikeTitledSuite(site.Source, site.Cursor))
+        if (site.Kind != CallKind.Suite || !LooksLikeTitledSuite(site.CursorAfterName()))
         {
             return null;
         }
@@ -136,24 +136,27 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
 
     static Call? ParseCall(CallSite site)
     {
-        var source = site.Source;
-        if (!TrySkipModifiers(source, site.Cursor, out var cursor, out var dataDriven) || !At(source, cursor, '('))
+        var cursor = site.CursorAfterName();
+        if (!TrySkipModifiers(cursor, out var dataDriven) || !cursor.At('('))
         {
             return null;
         }
 
-        var callEnd = Matching(source, cursor, '(', ')');
+        var callEnd = cursor.MatchingParenthesis();
         if (callEnd < 0)
         {
             return null;
         }
 
-        if (!TryReadTitle(site, SkipWhitespace(source, cursor + 1), out var title, out var callbackStart))
+        cursor.Advance();
+        cursor.SkipWhitespace();
+        if (!TryReadTitle(site, cursor, out var title))
         {
             return null;
         }
 
-        var callback = Callback(source, callbackStart, callEnd);
+        cursor.Limit = callEnd;
+        var callback = Callback(cursor);
         if (site.Kind == CallKind.Suite && callback.BodyStart is null)
         {
             return null;
@@ -162,26 +165,27 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
         return new(site.Name, site.Kind, title, site.Start, callback.BodyEnd ?? callEnd, callback.BodyStart, callback.Body, dataDriven);
     }
 
-    static bool TryReadTitle(CallSite site, int start, out string? title, out int end)
+    static bool TryReadTitle(CallSite site, TypeScriptCursor cursor, out string? title)
     {
         title = null;
-        end = start;
-        return site.Kind is CallKind.Hook || TryReadString(site.Source, start, out title, out end);
+        return site.Kind is CallKind.Hook || cursor.TryReadString(out title);
     }
 
-    static bool TrySkipModifiers(string source, int start, out int cursor, out bool dataDriven)
+    static bool TrySkipModifiers(TypeScriptCursor cursor, out bool dataDriven)
     {
-        cursor = SkipWhitespace(source, start);
+        cursor.SkipWhitespace();
         dataDriven = false;
-        while (At(source, cursor, '.'))
+        while (cursor.At('.'))
         {
-            var propertyStart = cursor + 1;
-            cursor = SkipIdentifier(source, propertyStart);
-            var property = source[propertyStart..cursor];
+            cursor.Advance();
+            var propertyStart = cursor.Position;
+            cursor.SkipIdentifier();
+            var property = cursor.Text[propertyStart..cursor.Position];
             if (property.Equals("each", StringComparison.Ordinal))
             {
                 dataDriven = true;
-                if (!TrySkipEachData(source, SkipWhitespace(source, cursor), out cursor))
+                cursor.SkipWhitespace();
+                if (!TrySkipEachData(cursor))
                 {
                     return false;
                 }
@@ -190,59 +194,53 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
             {
                 return false;
             }
-            cursor = SkipWhitespace(source, cursor);
+            cursor.SkipWhitespace();
         }
         return true;
     }
 
-    static bool TrySkipEachData(string source, int cursor, out int end)
+    static bool TrySkipEachData(TypeScriptCursor cursor)
     {
-        end = cursor;
-        if (At(source, cursor, '('))
+        if (cursor.At('('))
         {
-            var dataEnd = Matching(source, cursor, '(', ')');
-            end = dataEnd + 1;
+            var dataEnd = cursor.MatchingParenthesis();
+            cursor.Position = dataEnd + 1;
             return dataEnd >= 0;
         }
-        if (At(source, cursor, '`'))
-        {
-            end = StringEnd(source, cursor);
-            return end >= 0;
-        }
-        return false;
+        return cursor.At('`') && cursor.SkipString();
     }
 
-    static CallbackInfo Callback(string source, int start, int limit)
+    static CallbackInfo Callback(TypeScriptCursor cursor)
     {
-        var length = Math.Max(0, limit - start);
-        var arrow = source.IndexOf("=>", start, length, StringComparison.Ordinal);
-        var function = Function().Match(source, start, length);
+        var arrow = cursor.Text.IndexOf("=>", cursor.Position, cursor.RemainingLength, StringComparison.Ordinal);
+        var function = Function().Match(cursor.Text, cursor.Position, cursor.RemainingLength);
         if (arrow < 0 && !function.Success)
         {
             return new(null, null, null);
         }
 
-        var expressionStart = SkipWhitespace(source, MarkerEnd(function, arrow));
-        return expressionStart < limit && source[expressionStart] == '{'
-            ? BlockBody(source, expressionStart, limit)
-            : ExpressionBody(source, expressionStart, limit);
+        cursor.Position = MarkerEnd(function, arrow);
+        cursor.SkipWhitespace();
+        return cursor.Position < cursor.Limit && cursor.At('{') ? BlockBody(cursor) : ExpressionBody(cursor);
     }
 
     static int MarkerEnd(Match function, int arrow) =>
         function.Success && (arrow < 0 || function.Index < arrow) ? function.Index + function.Length : arrow + 2;
 
-    static CallbackInfo BlockBody(string source, int bodyStart, int limit)
+    static CallbackInfo BlockBody(TypeScriptCursor cursor)
     {
-        var end = Matching(source, bodyStart, '{', '}');
-        return end < 0 || end > limit
+        var bodyStart = cursor.Position;
+        var end = cursor.MatchingBrace();
+        return end < 0 || end > cursor.Limit
             ? new(null, null, null)
-            : new(bodyStart, end, source[(bodyStart + 1)..end].Trim());
+            : new(bodyStart, end, cursor.Text[(bodyStart + 1)..end].Trim());
     }
 
-    static CallbackInfo ExpressionBody(string source, int expressionStart, int limit)
+    static CallbackInfo ExpressionBody(TypeScriptCursor cursor)
     {
-        var expressionEnd = TopLevelArgumentEnd(source, expressionStart, limit);
-        var body = expressionStart < expressionEnd ? source[expressionStart..expressionEnd].Trim() : null;
+        var expressionStart = cursor.Position;
+        var expressionEnd = cursor.TopLevelArgumentEnd();
+        var body = expressionStart < expressionEnd ? cursor.Text[expressionStart..expressionEnd].Trim() : null;
         return new(null, null, body);
     }
 
@@ -255,51 +253,64 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
 
     static bool Contains(Call parent, Call child) => child.Start > parent.BodyStart && child.End < parent.End;
 
-    static bool LooksLikeTitledSuite(string source, int cursor)
+    static bool LooksLikeTitledSuite(TypeScriptCursor cursor)
     {
-        cursor = SkipWhitespace(source, cursor);
-        while (At(source, cursor, '.'))
+        cursor.SkipWhitespace();
+        while (cursor.At('.'))
         {
-            var start = cursor + 1;
-            cursor = SkipLetters(source, start);
-            if (!Modifiers.Contains(source[start..cursor]))
+            cursor.Advance();
+            var start = cursor.Position;
+            cursor.SkipLetters();
+            if (!Modifiers.Contains(cursor.Text[start..cursor.Position]))
             {
                 return false;
             }
-            cursor = SkipWhitespace(source, cursor);
+            cursor.SkipWhitespace();
         }
-        if (!At(source, cursor, '('))
+        if (!cursor.At('('))
         {
             return false;
         }
 
-        cursor = SkipWhitespace(source, cursor + 1);
-        return cursor < source.Length && IsQuote(source[cursor]);
+        cursor.Advance();
+        cursor.SkipWhitespace();
+        return cursor.AtQuote();
     }
 
     static Call? RecoverSuite(CallSite site)
     {
-        var source = site.Source;
-        var cursor = SkipWhitespace(source, site.Cursor);
-        while (At(source, cursor, '.'))
+        var cursor = site.CursorAfterName();
+        cursor.SkipWhitespace();
+        while (cursor.At('.'))
         {
-            cursor = SkipWhitespace(source, SkipLetters(source, cursor + 1));
+            cursor.Advance();
+            cursor.SkipLetters();
+            cursor.SkipWhitespace();
         }
-        if (!At(source, cursor, '(') || !TryReadString(source, SkipWhitespace(source, cursor + 1), out var title, out cursor))
+        if (!cursor.At('('))
         {
             return null;
         }
 
-        var arrow = source.IndexOf("=>", cursor, StringComparison.Ordinal);
-        var function = Function().Match(source, cursor);
+        cursor.Advance();
+        cursor.SkipWhitespace();
+        if (!cursor.TryReadString(out var title))
+        {
+            return null;
+        }
+
+        var source = site.Source;
+        var arrow = source.IndexOf("=>", cursor.Position, StringComparison.Ordinal);
+        var function = Function().Match(source, cursor.Position);
         if (arrow < 0 && !function.Success)
         {
             return null;
         }
 
-        var bodyStart = SkipWhitespace(source, MarkerEnd(function, arrow));
-        return At(source, bodyStart, '{')
-            ? new(site.Name, CallKind.Suite, title, site.Start, source.Length, bodyStart, source[(bodyStart + 1)..].Trim(), false)
+        cursor.Position = MarkerEnd(function, arrow);
+        cursor.SkipWhitespace();
+        return cursor.At('{')
+            ? new(site.Name, CallKind.Suite, title, site.Start, source.Length, cursor.Position, source[(cursor.Position + 1)..].Trim(), false)
             : null;
     }
 
@@ -348,7 +359,10 @@ internal partial class TypeScriptSpecificationParser : ISpecificationParser
     enum CallKind { Suite, Test, Hook }
     sealed record Call(string Name, CallKind Kind, string? Title, int Start, int End, int? BodyStart, string? Body, bool DataDriven);
     sealed record CallbackInfo(int? BodyStart, int? BodyEnd, string? Body);
-    sealed record CallSite(string Source, int Start, int Cursor, string Name, CallKind Kind);
+    sealed record CallSite(string Source, int Start, int NameEnd, string Name, CallKind Kind)
+    {
+        public TypeScriptCursor CursorAfterName() => new(Source, NameEnd);
+    }
     sealed record FileScope(SourceFile File, DiscoveryContext Context, PathClassification Classification);
     sealed record ScenarioDraft(string Title, int Start, IReadOnlyList<BehaviorStep> Given, IReadOnlyList<Call> Tests);
 
