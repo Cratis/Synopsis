@@ -6,8 +6,11 @@ using Cratis.Synopsis.Model;
 
 namespace Cratis.Synopsis.Parsing;
 
-internal class GherkinSpecificationParser : ISpecificationParser
+internal partial class GherkinSpecificationParser : ISpecificationParser
 {
+    static readonly string[] ScenarioKeywords = ["Scenario Outline", "Scenario Template", "Scenario", "Example"];
+    static readonly string[] StepKeywords = ["Given", "When", "Then", "And", "But", "*"];
+
     public IReadOnlySet<string> Extensions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".feature" };
 
     public ParseResult Parse(IReadOnlyList<SourceFile> files, DiscoveryContext context)
@@ -24,144 +27,70 @@ internal class GherkinSpecificationParser : ISpecificationParser
     static void ParseFile(SourceFile file, DiscoveryContext context, List<BehaviorScenario> result, List<DiscoveryDiagnostic> diagnostics)
     {
         var initialScenarioCount = result.Count;
+        var reader = new FeatureReader(file, context, result);
         var lines = file.Content.Replace("\r\n", "\n").Split('\n');
-        var feature = Path.GetFileNameWithoutExtension(file.RelativePath);
-        string? rule = null;
-        Scenario? scenario = null;
-        List<Step>? background = null;
-        var backgrounds = new Dictionary<string, List<Step>>(StringComparer.Ordinal);
-        var phase = Phase.Given;
-        var inExamples = false;
-        IReadOnlyList<string>? exampleHeader = null;
-
-        void FinishScenario()
-        {
-            if (scenario is null)
-            {
-                return;
-            }
-
-            AddScenarios(file, context, feature, scenario, backgrounds.GetValueOrDefault(scenario.Rule ?? string.Empty) ?? backgrounds.GetValueOrDefault(string.Empty) ?? [], result);
-            scenario = null;
-            inExamples = false;
-            exampleHeader = null;
-        }
-
         for (var index = 0; index < lines.Length; index++)
         {
-            var text = lines[index].Trim();
-            if (text.Length == 0 || text.StartsWith('#') || text.StartsWith('@'))
-            {
-                continue;
-            }
-
-            if (TryDeclaration(text, "Feature", out var value))
-            {
-                FinishScenario();
-                feature = value;
-                rule = null;
-                continue;
-            }
-            if (TryDeclaration(text, "Rule", out value))
-            {
-                FinishScenario();
-                rule = value;
-                continue;
-            }
-            if (TryDeclaration(text, "Background", out _))
-            {
-                FinishScenario();
-                background = [];
-                backgrounds[rule ?? string.Empty] = background;
-                phase = Phase.Given;
-                continue;
-            }
-            if (TryScenario(text, out value, out var outline))
-            {
-                FinishScenario();
-                background = null;
-                scenario = new(value, index + 1, rule, outline);
-                phase = Phase.Given;
-                continue;
-            }
-            if (TryDeclaration(text, "Examples", out _))
-            {
-                if (scenario is not null)
-                {
-                    inExamples = true;
-                    exampleHeader = null;
-                }
-                continue;
-            }
-            if (inExamples && text.StartsWith('|') && text.EndsWith('|') && scenario is not null)
-            {
-                var cells = text[1..^1].Split('|').Select(_ => _.Trim()).ToList();
-                if (exampleHeader is null)
-                {
-                    exampleHeader = cells;
-                }
-                else if (cells.Count == exampleHeader.Count)
-                {
-                    scenario.Examples.Add(exampleHeader.Zip(cells).ToDictionary(_ => _.First, _ => _.Second, StringComparer.Ordinal));
-                }
-                continue;
-            }
-
-            if (TryStep(text, ref phase, out var step))
-            {
-                if (scenario is not null)
-                {
-                    scenario.Steps.Add(step);
-                }
-                else if (background is not null)
-                {
-                    background.Add(step);
-                }
-            }
+            reader.Read(index, lines[index].Trim());
         }
 
-        FinishScenario();
+        reader.FinishScenario();
         if (result.Count == initialScenarioCount)
         {
             diagnostics.Add(new(file.RelativePath, "The feature file contains no scenarios."));
         }
     }
 
-    static void AddScenarios(SourceFile file, DiscoveryContext context, string feature, Scenario scenario, IReadOnlyList<Step> background, List<BehaviorScenario> result)
+    static IEnumerable<BehaviorScenario> BuildScenarios(FeatureScope scope, Scenario scenario, IReadOnlyList<Step> background)
     {
         var examples = scenario.Examples.Count > 0 ? scenario.Examples : [new Dictionary<string, string>()];
         for (var exampleIndex = 0; exampleIndex < examples.Count; exampleIndex++)
         {
-            var values = examples[exampleIndex];
-            var title = Replace(scenario.Title, values);
-            var allSteps = background.Concat(scenario.Steps).Select(step => step with { Text = Replace(step.Text, values) }).ToList();
-            var given = allSteps.Where(_ => _.Phase == Phase.Given).Select(_ => new BehaviorStep(_.Text)).ToList();
-            if (scenario.Examples.Count > 0)
-            {
-                given.Add(new("Example", string.Join(", ", values.Select(_ => $"{_.Key} = {_.Value}"))));
-            }
-            var whenSteps = allSteps.Where(_ => _.Phase == Phase.When).Select(_ => _.Text).ToList();
-            var then = allSteps.Where(_ => _.Phase == Phase.Then).Select(_ => new BehaviorStep(_.Text)).ToList();
-            var classification = context.Classify(file.ClassificationPath, explicitFeature: scenario.Rule is null ? feature : $"{feature} · {scenario.Rule}");
-            var subject = scenario.Rule is null ? Humanizer.Identifier(Path.GetFileNameWithoutExtension(file.RelativePath)) : Humanizer.Identifier(scenario.Rule);
-            result.Add(new(
-                $"gherkin:{file.RelativePath}:{scenario.Line}:{exampleIndex}",
-                classification.Module,
-                classification.Feature,
-                subject,
-                Humanizer.Identifier(title),
-                given,
-                new(whenSteps.Count == 0 ? Humanizer.Identifier(title) : string.Join(" and ", whenSteps.Select((_, index) => index == 0 ? _ : LowerFirst(_)))),
-                then,
-                "Gherkin",
-                "Model",
-                context.Locate(file.RelativePath, scenario.Line)));
+            yield return BuildScenario(scope, new(scenario, background, examples[exampleIndex], exampleIndex));
         }
+    }
+
+    static BehaviorScenario BuildScenario(FeatureScope scope, ExampleRun run)
+    {
+        var scenario = run.Scenario;
+        var file = scope.File;
+        var title = Replace(scenario.Title, run.Values);
+        var allSteps = run.Background.Concat(scenario.Steps).Select(step => step with { Text = Replace(step.Text, run.Values) }).ToList();
+        var given = allSteps.Where(_ => _.Phase == Phase.Given).Select(_ => new BehaviorStep(_.Text)).ToList();
+        if (scenario.Examples.Count > 0)
+        {
+            given.Add(new("Example", string.Join(", ", run.Values.Select(_ => $"{_.Key} = {_.Value}"))));
+        }
+        var then = allSteps.Where(_ => _.Phase == Phase.Then).Select(_ => new BehaviorStep(_.Text)).ToList();
+        var classification = scope.Context.Classify(file.ClassificationPath, explicitFeature: scenario.Rule is null ? scope.Feature : $"{scope.Feature} · {scenario.Rule}");
+        return new(
+            $"gherkin:{file.RelativePath}:{scenario.Line}:{run.Index}",
+            classification.Module,
+            classification.Feature,
+            SubjectOf(file, scenario),
+            Humanizer.Identifier(title),
+            given,
+            new(WhenText(title, allSteps)),
+            then,
+            "Gherkin",
+            "Model",
+            scope.Context.Locate(file.RelativePath, scenario.Line));
+    }
+
+    static string SubjectOf(SourceFile file, Scenario scenario) =>
+        Humanizer.Identifier(scenario.Rule ?? Path.GetFileNameWithoutExtension(file.RelativePath));
+
+    static string WhenText(string title, IReadOnlyList<Step> steps)
+    {
+        var whenSteps = steps.Where(_ => _.Phase == Phase.When).Select(_ => _.Text).ToList();
+        return whenSteps.Count == 0
+            ? Humanizer.Identifier(title)
+            : string.Join(" and ", whenSteps.Select((_, index) => index == 0 ? _ : LowerFirst(_)));
     }
 
     static bool TryScenario(string text, out string value, out bool outline)
     {
-        foreach (var keyword in new[] { "Scenario Outline", "Scenario Template", "Scenario", "Example" })
+        foreach (var keyword in ScenarioKeywords)
         {
             if (TryDeclaration(text, keyword, out value))
             {
@@ -186,23 +115,16 @@ internal class GherkinSpecificationParser : ISpecificationParser
         return false;
     }
 
-    static bool TryStep(string text, ref Phase phase, out Step step)
+    static string? StepKeywordOf(string text) =>
+        StepKeywords.FirstOrDefault(keyword => text.StartsWith($"{keyword} ", StringComparison.OrdinalIgnoreCase));
+
+    static Phase PhaseOf(string keyword, Phase current) => keyword.ToUpperInvariant() switch
     {
-        foreach (var keyword in new[] { "Given", "When", "Then", "And", "But", "*" })
-        {
-            if (!text.StartsWith($"{keyword} ", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-            if (keyword.Equals("Given", StringComparison.OrdinalIgnoreCase)) phase = Phase.Given;
-            if (keyword.Equals("When", StringComparison.OrdinalIgnoreCase)) phase = Phase.When;
-            if (keyword.Equals("Then", StringComparison.OrdinalIgnoreCase)) phase = Phase.Then;
-            step = new(phase, text[(keyword.Length + 1)..].Trim());
-            return true;
-        }
-        step = default;
-        return false;
-    }
+        "GIVEN" => Phase.Given,
+        "WHEN" => Phase.When,
+        "THEN" => Phase.Then,
+        _ => current
+    };
 
     static string Replace(string value, IReadOnlyDictionary<string, string> examples)
     {
@@ -217,6 +139,8 @@ internal class GherkinSpecificationParser : ISpecificationParser
 
     enum Phase { Given, When, Then }
     readonly record struct Step(Phase Phase, string Text);
+    sealed record FeatureScope(SourceFile File, DiscoveryContext Context, string Feature);
+    sealed record ExampleRun(Scenario Scenario, IReadOnlyList<Step> Background, IReadOnlyDictionary<string, string> Values, int Index);
     sealed record Scenario(string Title, int Line, string? Rule, bool Outline)
     {
         public List<Step> Steps { get; } = [];
