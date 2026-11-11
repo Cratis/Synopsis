@@ -21,30 +21,26 @@ internal static class PathClassifier
         string? namespaceName = null,
         string? fallbackModule = null)
     {
-        var segments = relativePath.Replace('\\', '/').Split('/').SkipLast(1).ToList();
-        var behaviorIndex = segments.FindIndex(_ => _.StartsWith("for_", StringComparison.OrdinalIgnoreCase) || _.StartsWith("when_", StringComparison.OrdinalIgnoreCase));
-        var subjectSegment = behaviorIndex >= 0
-            ? segments[behaviorIndex..].FirstOrDefault(_ => _.StartsWith("for_", StringComparison.OrdinalIgnoreCase)) ?? segments[behaviorIndex]
-            : segments.LastOrDefault() ?? "system";
-        var subject = Humanizer.Subject(subjectSegment);
-
-        var beforeBehavior = behaviorIndex >= 0 ? segments[..behaviorIndex] : segments;
-        var meaningful = SemanticSegments(beforeBehavior.SelectMany(SplitSegment), skipped).ToList();
-        if (meaningful.Count == 0 && !string.IsNullOrWhiteSpace(namespaceName))
-        {
-            var namespaceSegments = namespaceName.Split('.').TakeWhile(_ => !IsBehaviorSegment(_));
-            meaningful = SemanticSegments(namespaceSegments, skipped).ToList();
-        }
+        var path = BehaviorPath.From(relativePath);
+        var subject = Humanizer.Subject(path.SubjectSegment);
+        var meaningful = MeaningfulSegments(path, skipped, namespaceName);
 
         var fallback = fallbackModule is null || skipped.Contains(fallbackModule, StringComparer.OrdinalIgnoreCase) ? "System" : Humanizer.Identifier(fallbackModule);
         var module = explicitModule is null ? meaningful.FirstOrDefault() ?? fallback : Humanizer.Identifier(explicitModule);
-        var featureParts = meaningful.Skip(1).ToList();
-        var feature = explicitFeature is not null
-            ? Humanizer.Identifier(explicitFeature)
-            : featureParts.Count > 0
-                ? string.Join(" · ", featureParts)
-                : subject;
+        var feature = explicitFeature is not null ? Humanizer.Identifier(explicitFeature) : meaningful.Count > 1 ? string.Join(" · ", meaningful.Skip(1)) : subject;
         return new(module, feature, subject);
+    }
+
+    static List<string> MeaningfulSegments(BehaviorPath path, IReadOnlyList<string> skipped, string? namespaceName)
+    {
+        var meaningful = SemanticSegments(path.BeforeBehavior.SelectMany(SplitSegment), skipped).ToList();
+        if (meaningful.Count > 0 || string.IsNullOrWhiteSpace(namespaceName))
+        {
+            return meaningful;
+        }
+
+        var namespaceSegments = namespaceName.Split('.').TakeWhile(_ => !IsBehaviorSegment(_));
+        return SemanticSegments(namespaceSegments, skipped).ToList();
     }
 
     static IEnumerable<string> SplitSegment(string segment)
@@ -75,4 +71,19 @@ internal static class PathClassifier
         segment.StartsWith("for_", StringComparison.OrdinalIgnoreCase) ||
         segment.StartsWith("when_", StringComparison.OrdinalIgnoreCase) ||
         segment.StartsWith("given", StringComparison.OrdinalIgnoreCase);
+
+    sealed record BehaviorPath(List<string> Segments, int BehaviorIndex)
+    {
+        public string SubjectSegment => BehaviorIndex >= 0
+            ? Segments[BehaviorIndex..].FirstOrDefault(_ => _.StartsWith("for_", StringComparison.OrdinalIgnoreCase)) ?? Segments[BehaviorIndex]
+            : Segments.LastOrDefault() ?? "system";
+
+        public IEnumerable<string> BeforeBehavior => BehaviorIndex >= 0 ? Segments[..BehaviorIndex] : Segments;
+
+        public static BehaviorPath From(string relativePath)
+        {
+            var segments = relativePath.Replace('\\', '/').Split('/').SkipLast(1).ToList();
+            return new(segments, segments.FindIndex(_ => _.StartsWith("for_", StringComparison.OrdinalIgnoreCase) || _.StartsWith("when_", StringComparison.OrdinalIgnoreCase)));
+        }
+    }
 }
