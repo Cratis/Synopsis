@@ -45,11 +45,7 @@ static class ProjectConfiguration
         }
 
         var url = origin[(origin.IndexOf('=') + 1)..].Trim();
-        if (url.StartsWith("git@github.com:", StringComparison.Ordinal))
-        {
-            url = $"https://github.com/{url[15..]}";
-        }
-        return url.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? url[..^4] : url;
+        return RepositoryUrl.FromRemote(url);
     }
 
     static string? OriginUrlLine(string configPath) => File.ReadLines(configPath)
