@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Synopsis/Synopsis.csproj" />
+    <ProjectReference Include="../Tool/Tool.csproj" />
     <PackageReference Include="Cratis.Specifications" />
     <PackageReference Include="Cratis.Specifications.XUnit.v3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
