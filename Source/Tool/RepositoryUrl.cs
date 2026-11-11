@@ -14,7 +14,7 @@ static class RepositoryUrl
             return null;
         }
 
-        var url = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty }.Uri.AbsoluteUri;
+        var url = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty }.Uri.AbsoluteUri;
         return url.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? url[..^4] : url;
     }
 
